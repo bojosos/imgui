@@ -17,8 +17,8 @@ project "imgui"
 		"imstb_textedit.h",
 		"imstb_truetype.h",
 		"imgui_demo.cpp",
-        "misc/cpp/imgui_stdlib.h",
-        "misc/cpp/imgui_stdlib.cpp"
+    "misc/cpp/imgui_stdlib.h",
+    "misc/cpp/imgui_stdlib.cpp"
 	}
 
 	includedirs
