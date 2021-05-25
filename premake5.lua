@@ -13,13 +13,13 @@ project "imgui"
 		"imgui_draw.cpp",
 		"imgui_internal.h",
 		"imgui_widgets.cpp",
-    "imgui_tables.cpp",
-    "imstb_rectpack.h",
+	    "imgui_tables.cpp",
+    	"imstb_rectpack.h",
 		"imstb_textedit.h",
 		"imstb_truetype.h",
 		"imgui_demo.cpp",
-    "misc/cpp/imgui_stdlib.h",
-    "misc/cpp/imgui_stdlib.cpp"
+   	 	"misc/cpp/imgui_stdlib.h",
+  		"misc/cpp/imgui_stdlib.cpp"
 	}
 
 	includedirs
