@@ -4224,6 +4224,37 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             }
             state->CursorAnimReset();
         }
+        else if (hovered && io.MouseClickedCount[0] >= 2 && !io.KeyShift)
+        {
+            stb_textedit_click(state, &state->Stb, mouse_x, mouse_y);
+            const int multiclick_count = (io.MouseClickedCount[0] - 2);
+            if ((multiclick_count % 2) == 0)
+            {
+                int ext_len = 0;
+                for (int i = state->CurLenW - 1; i >= 0; i--)
+                {
+                    ext_len++;
+                    if (state->TextW[i] == '.')
+                        break;
+                }
+                if (ext_len == state->CurLenW) // no . char in string.
+                    ext_len = 0;
+                state->Select(0, ext_len);
+                state->SelectedAllMouseLock = true;
+            }
+            else
+            {
+                state->SelectAll();
+                state->SelectedAllMouseLock = true;
+            }
+        }
+        else if (hovered && is_osx && io.MouseDoubleClicked[0])
+        {
+            // Double-click select a word only, OS X style (by simulating keystrokes)
+            // Maybe worth doing this on all platforms? Shouldn't this be default behaviour?
+            state->OnKeyPressed(STB_TEXTEDIT_K_WORDLEFT);
+            state->OnKeyPressed(STB_TEXTEDIT_K_WORDRIGHT | STB_TEXTEDIT_K_SHIFT);
+        }
         else if (io.MouseClicked[0] && !state->SelectedAllMouseLock)
         {
             // FIXME: unselect on late click could be done release?

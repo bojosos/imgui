@@ -25,6 +25,10 @@
 #pragma once
 #include "imgui.h"      // IMGUI_IMPL_API
 
+#ifdef CW
+#include "Crowny/RenderAPI/Texture.h" // For textures only
+#endif
+
 // [Configuration] in order to use a custom Vulkan function loader:
 // (1) You'll need to disable default Vulkan function prototypes.
 //     We provide a '#define IMGUI_IMPL_VULKAN_NO_PROTOTYPES' convenience configuration flag.
@@ -66,10 +70,18 @@ struct ImGui_ImplVulkan_InitInfo
 IMGUI_IMPL_API bool     ImGui_ImplVulkan_Init(ImGui_ImplVulkan_InitInfo* info, VkRenderPass render_pass);
 IMGUI_IMPL_API void     ImGui_ImplVulkan_Shutdown();
 IMGUI_IMPL_API void     ImGui_ImplVulkan_NewFrame();
-IMGUI_IMPL_API void     ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer command_buffer, VkPipeline pipeline = VK_NULL_HANDLE);
+IMGUI_IMPL_API void     ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, /*const Crowny::Ref<Crowny::VulkanCmdBuffer>&*/VkCommandBuffer command_buffer, VkPipeline pipeline = VK_NULL_HANDLE, bool isWindow = false);
 IMGUI_IMPL_API bool     ImGui_ImplVulkan_CreateFontsTexture(VkCommandBuffer command_buffer);
 IMGUI_IMPL_API void     ImGui_ImplVulkan_DestroyFontUploadObjects();
 IMGUI_IMPL_API void     ImGui_ImplVulkan_SetMinImageCount(uint32_t min_image_count); // To override MinImageCount after initialization (e.g. if swap chain is recreated)
+
+#ifdef CW
+IMGUI_IMPL_API ImTextureID ImGui_ImplVulkan_AddTexture(const Crowny::Ref<Crowny::Texture>& texture);
+IMGUI_IMPL_API void        ImGui_ImplVulkan_ClearTextures();
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
+IMGUI_IMPL_API void        ImGui_ImplVulkan_TransitionLayouts(Crowny::VulkanCmdBuffer* cmdBuffer);
+#endif
+IMGUI_IMPL_API ImTextureID ImGui_ImplVulkan_AddTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout, Crowny::VulkanImage* image = nullptr);
 
 // Optional: load Vulkan functions with a custom function loader
 // This is only useful with IMGUI_IMPL_VULKAN_NO_PROTOTYPES / VK_NO_PROTOTYPES
