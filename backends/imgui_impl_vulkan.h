@@ -75,12 +75,10 @@ IMGUI_IMPL_API bool     ImGui_ImplVulkan_CreateFontsTexture(VkCommandBuffer comm
 IMGUI_IMPL_API void     ImGui_ImplVulkan_DestroyFontUploadObjects();
 IMGUI_IMPL_API void     ImGui_ImplVulkan_SetMinImageCount(uint32_t min_image_count); // To override MinImageCount after initialization (e.g. if swap chain is recreated)
 
-#ifdef CW
 IMGUI_IMPL_API ImTextureID ImGui_ImplVulkan_AddTexture(const Crowny::Ref<Crowny::Texture>& texture);
 IMGUI_IMPL_API void        ImGui_ImplVulkan_ClearTextures();
 #include "Platform/Vulkan/VulkanCommandBuffer.h"
 IMGUI_IMPL_API void        ImGui_ImplVulkan_TransitionLayouts(Crowny::VulkanCmdBuffer* cmdBuffer);
-#endif
 IMGUI_IMPL_API ImTextureID ImGui_ImplVulkan_AddTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout, Crowny::VulkanImage* image = nullptr);
 
 // Optional: load Vulkan functions with a custom function loader

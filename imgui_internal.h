@@ -1051,6 +1051,7 @@ struct IMGUI_API ImGuiInputTextState
     int         GetSelectionStart() const   { return Stb.select_start; }
     int         GetSelectionEnd() const     { return Stb.select_end; }
     void        SelectAll()                 { Stb.select_start = 0; Stb.cursor = Stb.select_end = CurLenW; Stb.has_preferred_x = 0; }
+    void        Select(int start, int len)  { Stb.select_start = 0;  Stb.cursor = Stb.select_end = CurLenW - len; Stb.has_preferred_x = 0; } // Selects the text starting at 'start' with length CurLenW - len. Doggy
 };
 
 // Storage for current popup stack

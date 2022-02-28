@@ -4186,8 +4186,25 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         const bool is_osx = io.ConfigMacOSXBehaviors;
         if (select_all)
         {
-            state->SelectAll();
-            state->SelectedAllMouseLock = true;
+            if ((flags & ImGuiInputTextFlags_CodeSelectNoExt) != 0)
+            {
+                int ext_len = 0;
+                for (int i = state->CurLenW - 1; i >= 0; i--)
+                {
+                    ext_len++;
+                    if (state->TextW[i] == '.')
+                        break;
+                }
+                if (ext_len == state->CurLenW) // no . char in string.
+                    ext_len = 0;
+                state->Select(0, ext_len);
+                state->SelectedAllMouseLock = true;
+            }
+            else
+            {
+                state->SelectAll();
+                state->SelectedAllMouseLock = true;
+            }
         }
         else if (hovered && io.MouseClickedCount[0] >= 2 && !io.KeyShift)
         {
@@ -4230,23 +4247,34 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             const int multiclick_count = (io.MouseClickedCount[0] - 2);
             if ((multiclick_count % 2) == 0)
             {
-                int ext_len = 0;
-                for (int i = state->CurLenW - 1; i >= 0; i--)
-                {
-                    ext_len++;
-                    if (state->TextW[i] == '.')
-                        break;
-                }
-                if (ext_len == state->CurLenW) // no . char in string.
-                    ext_len = 0;
-                state->Select(0, ext_len);
-                state->SelectedAllMouseLock = true;
+                // Double-click: Select word
+                // We always use the "Mac" word advance for double-click select vs CTRL+Right which use the platform dependent variant:
+                // FIXME: There are likely many ways to improve this behavior, but there's no "right" behavior (depends on use-case, software, OS)
+                const bool is_bol = (state->Stb.cursor == 0) || ImStb::STB_TEXTEDIT_GETCHAR(state, state->Stb.cursor - 1) == '\n';
+                if (STB_TEXT_HAS_SELECTION(&state->Stb) || !is_bol)
+                    state->OnKeyPressed(STB_TEXTEDIT_K_WORDLEFT);
+                //state->OnKeyPressed(STB_TEXTEDIT_K_WORDRIGHT | STB_TEXTEDIT_K_SHIFT);
+                if (!STB_TEXT_HAS_SELECTION(&state->Stb))
+                    ImStb::stb_textedit_prep_selection_at_cursor(&state->Stb);
+                state->Stb.cursor = ImStb::STB_TEXTEDIT_MOVEWORDRIGHT_MAC(state, state->Stb.cursor);
+                state->Stb.select_end = state->Stb.cursor;
+                ImStb::stb_textedit_clamp(state, &state->Stb);
             }
             else
             {
-                state->SelectAll();
-                state->SelectedAllMouseLock = true;
+                // Triple-click: Select line
+                const bool is_eol = ImStb::STB_TEXTEDIT_GETCHAR(state, state->Stb.cursor) == '\n';
+                state->OnKeyPressed(STB_TEXTEDIT_K_LINESTART);
+                state->OnKeyPressed(STB_TEXTEDIT_K_LINEEND | STB_TEXTEDIT_K_SHIFT);
+                state->OnKeyPressed(STB_TEXTEDIT_K_RIGHT | STB_TEXTEDIT_K_SHIFT);
+                if (!is_eol && is_multiline)
+                {
+                    ImSwap(state->Stb.select_start, state->Stb.select_end);
+                    state->Stb.cursor = state->Stb.select_end;
+                }
+                state->CursorFollow = false;
             }
+            state->CursorAnimReset();
         }
         else if (hovered && is_osx && io.MouseDoubleClicked[0])
         {

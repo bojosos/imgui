@@ -25,7 +25,6 @@
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
 //  2021-XX-XX: Platform: Added support for multiple windows via the ImGuiPlatformIO interface.
-//  2021-10-15: Vulkan: Call vkCmdSetScissor() at the end of render a full-viewport to reduce likehood of issues with people using VK_DYNAMIC_STATE_SCISSOR in their app without calling vkCmdSetScissor() explicitly every frame.
 //  2021-06-29: Reorganized backend to pull data from a single structure to facilitate usage with multiple-contexts (all g_XXXX access changed to bd->XXXX).
 //  2021-03-22: Vulkan: Fix mapped memory validation error when buffer sizes are not multiple of VkPhysicalDeviceLimits::nonCoherentAtomSize.
 //  2021-02-18: Vulkan: Change blending equation to preserve alpha in output buffer.
@@ -103,6 +102,42 @@ struct ImGui_ImplVulkan_ViewportData
     ~ImGui_ImplVulkan_ViewportData()        { }
 };
 
+#include <unordered_map>
+#include <unordered_set>
+#include "Crowny/Common/Common.h"
+#include "Platform/Vulkan/VulkanTexture.h"
+#include "Platform/Vulkan/VulkanSamplerState.h"
+#include "Platform/Vulkan/VulkanCommandBuffer.h"
+
+struct TextureKey
+{
+    TextureKey(Crowny::VulkanImage* image, VkImageView view, VkImageLayout layout, VkSampler sampler)
+            : Image(image), View(view), Layout(layout), Sampler(sampler)
+    { }
+    struct HashFunction
+    {
+        size_t operator()(const TextureKey& key) const
+        {
+            size_t hash = 0;
+            Crowny::HashCombine(hash, key.View, key.Layout, key.Sampler, key.Image);
+            return hash;
+        }
+    };
+    
+    struct EqualsFunction
+    {
+        bool operator()(const TextureKey& lhs, const TextureKey& rhs) const
+        {
+            return lhs.View == rhs.View && lhs.Layout == rhs.Layout && lhs.Sampler == rhs.Sampler && lhs.Image == rhs.Image;
+        }
+    };
+    
+    Crowny::VulkanImage* Image;
+    VkImageView View;
+    VkImageLayout Layout;
+    VkSampler Sampler;
+};
+
 // Vulkan data
 struct ImGui_ImplVulkan_Data
 {
@@ -125,23 +160,16 @@ struct ImGui_ImplVulkan_Data
     VkImageView                 FontView;
     VkDeviceMemory              UploadBufferMemory;
     VkBuffer                    UploadBuffer;
-
+    
     // Render buffers for main window
     ImGui_ImplVulkanH_WindowRenderBuffers MainWindowRenderBuffers;
-#ifdef CW
     std::unordered_map<TextureKey, ImTextureID, TextureKey::HashFunction, TextureKey::EqualsFunction> Textures; // Should probably not be here
     std::unordered_set<Crowny::Ref<Crowny::Texture>> TextureRefs;
-#endif
 
-#ifdef CW
-    std::unordered_map<TextureKey, ImTextureID, TextureKey::HashFunction, TextureKey::EqualsFunction> Textures; // Should probably not be here
-    std::unordered_set<Crowny::Ref<Crowny::Texture>> TextureRefs;
-#endif
     ImGui_ImplVulkan_Data()
     {
-        memset(this, 0, sizeof(*this));
+        memset(this, 0, sizeof(*this) - sizeof(Textures) - sizeof(TextureRefs)); // Breaks the unordered_map if the whole struct is zero-ed
         BufferMemoryAlignment = 256;
-#endif
     }
 };
 
@@ -392,19 +420,16 @@ static void CreateOrResizeVertexBuffer(Crowny::Ref<Crowny::VertexBuffer>& buffer
 {
     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
     ImGui_ImplVulkan_InitInfo* v = &bd->VulkanInitInfo;
-    VkDeviceSize buffer_size_aligned = ((new_size - 1) / bd->BufferMemoryAlignment + 1) * bd->BufferMemoryAlignment;
-    buffer = Crowny::VertexBuffer::Create(buffer_size_aligned, Crowny::BufferUsage::DYNAMIC_DRAW);
-    p_buffer_size = buffer_size_aligned;
+    buffer = Crowny::VertexBuffer::Create(new_size, Crowny::BufferUsage::DYNAMIC_DRAW);
+    p_buffer_size = new_size;
 }
 
 static void CreateOrResizeIndexBuffer(Crowny::Ref<Crowny::IndexBuffer>& buffer, VkDeviceSize& p_buffer_size, size_t new_size, VkBufferUsageFlagBits usage)
 {
     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
     ImGui_ImplVulkan_InitInfo* v = &bd->VulkanInitInfo;
-
-    VkDeviceSize buffer_size_aligned = ((new_size - 1) / bd->BufferMemoryAlignment + 1) * bd->BufferMemoryAlignment;
-    buffer = Crowny::IndexBuffer::Create(buffer_size_aligned, sizeof(ImDrawIdx) == 2 ? Crowny::IndexType::Index_16 : Crowny::IndexType::Index_32, Crowny::BufferUsage::DYNAMIC_DRAW);
-    p_buffer_size = buffer_size_aligned;
+    buffer = Crowny::IndexBuffer::Create(new_size, sizeof(ImDrawIdx) == 2 ? Crowny::IndexType::Index_16 : Crowny::IndexType::Index_32, Crowny::BufferUsage::DYNAMIC_DRAW);
+    p_buffer_size = new_size * sizeof(ImDrawIdx);
 }
 
 static void ImGui_ImplVulkan_SetupRenderState(ImDrawData* draw_data, VkPipeline pipeline, /*Crowny::Ref<Crowny::VulkanCmdBuffer>&*/VkCommandBuffer command_buffer, ImGui_ImplVulkanH_FrameRenderBuffers* rb, int fb_width, int fb_height, bool isWindow)
@@ -413,8 +438,6 @@ static void ImGui_ImplVulkan_SetupRenderState(ImDrawData* draw_data, VkPipeline 
 
     {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        // VkDescriptorSet desc_set[1] = { bd->DescriptorSet };
-        // vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->PipelineLayout, 0, 1, desc_set, 0, NULL);
         vkCmdBindPipeline(command_buffer/*->GetHandle()*/, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     }
 
@@ -497,27 +520,27 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, /*const Crowny::Ref<
         // Create or resize the vertex/index buffers
         size_t vertex_size = draw_data->TotalVtxCount * sizeof(ImDrawVert);
         size_t index_size = draw_data->TotalIdxCount * sizeof(ImDrawIdx);
-        if (rb->VertexBuffer == VK_NULL_HANDLE || rb->VertexBufferSize < vertex_size)
-            CreateOrResizeBuffer(rb->VertexBuffer, rb->VertexBufferMemory, rb->VertexBufferSize, vertex_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-        if (rb->IndexBuffer == VK_NULL_HANDLE || rb->IndexBufferSize < index_size)
-            CreateOrResizeBuffer(rb->IndexBuffer, rb->IndexBufferMemory, rb->IndexBufferSize, index_size + 50000 * sizeof(ImDrawIdx), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
         if (rb->VertexBuffer == nullptr || rb->VertexBufferSize < vertex_size)
             CreateOrResizeVertexBuffer(rb->VertexBuffer, rb->VertexBufferSize, vertex_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
         if (rb->IndexBuffer == nullptr || rb->IndexBufferSize < index_size)
             CreateOrResizeIndexBuffer(rb->IndexBuffer, rb->IndexBufferSize, index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
+       
         ImDrawVert* vtx_dst = (ImDrawVert*)rb->VertexBuffer->Map(0, rb->VertexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
-        ImDrawIdx* idx_dst = (ImDrawIdx*)rb->IndexBuffer->Map(0, rb->IndexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
         for (int n = 0; n < draw_data->CmdListsCount; n++)
         {
             const ImDrawList* cmd_list = draw_data->CmdLists[n];
             memcpy(vtx_dst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
-            memcpy(idx_dst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
             vtx_dst += cmd_list->VtxBuffer.Size;
+        }
+        rb->VertexBuffer->Unmap();
+
+        ImDrawIdx* idx_dst = (ImDrawIdx*)rb->IndexBuffer->Map(0, rb->IndexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
+        for (int n = 0; n < draw_data->CmdListsCount; n++)
+        {
+            const ImDrawList* cmd_list = draw_data->CmdLists[n];
+            memcpy(idx_dst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
             idx_dst += cmd_list->IdxBuffer.Size;
         }
-
-        rb->VertexBuffer->Unmap();
         rb->IndexBuffer->Unmap();
     }
 
@@ -561,33 +584,18 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, /*const Crowny::Ref<
                 if (clip_max.x < clip_min.x || clip_max.y < clip_min.y)
                     continue;
 
-                    // Apply scissor/clipping rectangle
-                    VkRect2D scissor;
-                    scissor.offset.x = (int32_t)(clip_rect.x);
-                    scissor.offset.y = (int32_t)(clip_rect.y);
-                    scissor.extent.width = (uint32_t)(clip_rect.z - clip_rect.x);
-                    scissor.extent.height = (uint32_t)(clip_rect.w - clip_rect.y);
-                    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
                 // Apply scissor/clipping rectangle
                 VkRect2D scissor;
                 scissor.offset.x = (int32_t)(clip_min.x);
                 scissor.offset.y = (int32_t)(clip_min.y);
                 scissor.extent.width = (uint32_t)(clip_max.x - clip_min.x);
                 scissor.extent.height = (uint32_t)(clip_max.y - clip_min.y);
-                vkCmdSetScissor(command_buffer/*->GetHandle()*/, 0, 1, &scissor);
-                // command_buffer->SetScrissorRect({ (int32_t)(clip_min.x), (int32_t)(clip_min.y), (uint32_t)(clip_max.x - clip_min.x), (uint32_t)(clip_max.y - clip_min.y) });
+                vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-                    VkDescriptorSet descSet[1] = { (VkDescriptorSet)pcmd->TextureId };
-                    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->PipelineLayout, 0, 1, descSet, 0, nullptr);
-                    // Draw
-                    vkCmdDrawIndexed(command_buffer, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
-                }
                 VkDescriptorSet desc_set[1] = { (VkDescriptorSet)pcmd->TextureId };
                 vkCmdBindDescriptorSets(command_buffer/*->GetHandle()*/, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->PipelineLayout, 0, 1, desc_set, 0, NULL);
-
                 // Draw
-                vkCmdDrawIndexed(command_buffer/*->GetHandle()*/, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
-
+                vkCmdDrawIndexed(command_buffer, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
             }
         }
         global_idx_offset += cmd_list->IdxBuffer.Size;
@@ -663,35 +671,7 @@ bool ImGui_ImplVulkan_CreateFontsTexture(VkCommandBuffer command_buffer)
         check_vk_result(err);
     }
 
-    // Update the Descriptor Set:
-    // {
-        // VkDescriptorImageInfo desc_image[1] = {};
-        // desc_image[0].sampler = bd->FontSampler;
-        // desc_image[0].imageView = bd->FontView;
-        // desc_image[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        // VkWriteDescriptorSet write_desc[1] = {};
-        // write_desc[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        // write_desc[0].dstSet = bd->DescriptorSet;
-        // write_desc[0].descriptorCount = 1;
-        // write_desc[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        // write_desc[0].pImageInfo = desc_image;
-        // vkUpdateDescriptorSets(v->Device, 1, write_desc, 0, NULL);
-    // }
-    
     VkDescriptorSet fontDescriptorSet = (VkDescriptorSet)ImGui_ImplVulkan_AddTexture(bd->FontSampler, bd->FontView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    // {
-    //     VkDescriptorImageInfo desc_image[1] = {};
-    //     desc_image[0].sampler = bd->FontSampler;
-    //     desc_image[0].imageView = bd->FontView;
-    //     desc_image[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    //     VkWriteDescriptorSet write_desc[1] = {};
-    //     write_desc[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    //     write_desc[0].dstSet = bd->DescriptorSet;
-    //     write_desc[0].descriptorCount = 1;
-    //     write_desc[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    //     write_desc[0].pImageInfo = desc_image;
-    //     vkUpdateDescriptorSets(v->Device, 1, write_desc, 0, NULL);
-    // }
 
     VkDescriptorSet font_descriptor_set = (VkDescriptorSet)ImGui_ImplVulkan_AddTexture(bd->FontSampler, bd->FontView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -779,11 +759,94 @@ bool ImGui_ImplVulkan_CreateFontsTexture(VkCommandBuffer command_buffer)
     return true;
 }
 
+ImTextureID ImGui_ImplVulkan_AddTexture(const Crowny::Ref<Crowny::Texture>& texture)
+{
+    Crowny::VulkanTexture* vkTexture = static_cast<Crowny::VulkanTexture*>(texture.get());
+    Crowny::VulkanImage* image = vkTexture->GetImage();
+    Crowny::Ref<Crowny::SamplerState> samplerState = Crowny::SamplerState::GetDefault();
+    Crowny::VulkanSamplerState* vkSampler = static_cast<Crowny::VulkanSamplerState*>(samplerState.get());
+    VkSampler vkDefaultSampler = vkSampler->GetSampler()->GetHandle();
+
+    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
+    bd->TextureRefs.insert(texture);
+
+    return ImGui_ImplVulkan_AddTexture(vkDefaultSampler, image->GetView(false), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, image);
+}
+
+void ImGui_ImplVulkan_ClearTextures()
+{
+    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
+    bd->Textures.clear();
+    bd->TextureRefs.clear();
+}
+
+void ImGui_ImplVulkan_TransitionLayouts(Crowny::VulkanCmdBuffer* cmdBuffer)
+{
+    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
+    for (auto& tk : bd->Textures)
+    {
+        Crowny::VulkanImage* image = tk.first.Image;
+        if (!image)
+            continue;
+        VkImageSubresourceRange range = image->GetRange(Crowny::TextureSurface::COMPLETE);
+        cmdBuffer->RegisterImageShader(image, range, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, Crowny::VulkanAccessFlagBits::Read, VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+}
+
+ImTextureID ImGui_ImplVulkan_AddTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout, Crowny::VulkanImage* image)
+{
+    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
+    TextureKey key(image, imageView, imageLayout, sampler);
+    auto iter = bd->Textures.find(key);
+    if (iter != bd->Textures.end())
+    {
+        return iter->second;
+    }
+    else
+    {
+        ImGui_ImplVulkan_InitInfo* v = &bd->VulkanInitInfo;
+
+        VkResult err;
+
+        VkDescriptorSet descSet;
+        // Create Descriptor Set.
+        {
+            VkDescriptorSetAllocateInfo allocInfo = {};
+            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocInfo.pNext = nullptr;
+            allocInfo.descriptorPool = v->DescriptorPool;
+            allocInfo.descriptorSetCount = 1;
+            allocInfo.pSetLayouts = &bd->DescriptorSetLayout;
+            err = vkAllocateDescriptorSets(v->Device, &allocInfo, &descSet);
+            check_vk_result(err);
+        }
+
+        // Update Descriptor
+        {
+            VkDescriptorImageInfo descImage[1] = {};
+            descImage[0].sampler = sampler;
+            descImage[0].imageView = imageView;
+            descImage[0].imageLayout = imageLayout;
+            VkWriteDescriptorSet writeDesc[1] = {};
+            writeDesc[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeDesc[0].pNext = nullptr;
+            writeDesc[0].dstSet = descSet;
+            writeDesc[0].descriptorCount = 1;
+            writeDesc[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writeDesc[0].pImageInfo = descImage;
+            vkUpdateDescriptorSets(v->Device, 1, writeDesc, 0, nullptr);
+        }
+        bd->Textures[key] = (ImTextureID)descSet;
+        return (ImTextureID)descSet;
+    }
+    return 0;
+}
+
 static void ImGui_ImplVulkan_CreateShaderModules(VkDevice device, const VkAllocationCallbacks* allocator)
 {
     // Create the shader modules
     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
-    if (bd->ShaderModuleVert == VK_NULL_HANDLE)
+    if (bd->ShaderModuleVert == NULL)
     {
         VkShaderModuleCreateInfo vert_info = {};
         vert_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -792,7 +855,7 @@ static void ImGui_ImplVulkan_CreateShaderModules(VkDevice device, const VkAlloca
         VkResult err = vkCreateShaderModule(device, &vert_info, allocator, &bd->ShaderModuleVert);
         check_vk_result(err);
     }
-    if (bd->ShaderModuleFrag == VK_NULL_HANDLE)
+    if (bd->ShaderModuleFrag == NULL)
     {
         VkShaderModuleCreateInfo frag_info = {};
         frag_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1004,7 +1067,7 @@ bool ImGui_ImplVulkan_CreateDeviceObjects()
         binding[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         binding[0].descriptorCount = 1;
         binding[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        binding[0].pImmutableSamplers = sampler;
+        // binding[0].pImmutableSamplers = sampler; why is this not needed?
         VkDescriptorSetLayoutCreateInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         info.bindingCount = 1;
@@ -1014,15 +1077,15 @@ bool ImGui_ImplVulkan_CreateDeviceObjects()
     }
 
     // Create Descriptor Set:
-    {
-        VkDescriptorSetAllocateInfo alloc_info = {};
-        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        alloc_info.descriptorPool = v->DescriptorPool;
-        alloc_info.descriptorSetCount = 1;
-        alloc_info.pSetLayouts = &bd->DescriptorSetLayout;
-        err = vkAllocateDescriptorSets(v->Device, &alloc_info, &bd->DescriptorSet);
-        check_vk_result(err);
-    }
+    // {
+    //     VkDescriptorSetAllocateInfo alloc_info = {};
+    //     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    //     alloc_info.descriptorPool = v->DescriptorPool;
+    //     alloc_info.descriptorSetCount = 1;
+    //     alloc_info.pSetLayouts = &bd->DescriptorSetLayout;
+    //     err = vkAllocateDescriptorSets(v->Device, &alloc_info, &bd->DescriptorSet);
+    //     check_vk_result(err);
+    // }
 
     if (!bd->PipelineLayout)
     {
@@ -1143,9 +1206,8 @@ bool    ImGui_ImplVulkan_Init(ImGui_ImplVulkan_InitInfo* info, VkRenderPass rend
 
 void ImGui_ImplVulkan_Shutdown()
 {
-    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
-    IM_ASSERT(bd != NULL && "No renderer backend to shutdown, or already shutdown?");
     ImGuiIO& io = ImGui::GetIO();
+    ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
 
     // First destroy objects in all viewports
     ImGui_ImplVulkan_DestroyDeviceObjects();
@@ -1336,7 +1398,7 @@ void ImGui_ImplVulkanH_CreateWindowSwapChain(VkPhysicalDevice physical_device, V
 {
     VkResult err;
     VkSwapchainKHR old_swapchain = wd->Swapchain;
-    wd->Swapchain = VK_NULL_HANDLE;
+    wd->Swapchain = NULL;
     err = vkDeviceWaitIdle(device);
     check_vk_result(err);
 
