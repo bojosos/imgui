@@ -525,7 +525,7 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, /*const Crowny::Ref<
         if (rb->IndexBuffer == nullptr || rb->IndexBufferSize < index_size)
             CreateOrResizeIndexBuffer(rb->IndexBuffer, rb->IndexBufferSize, index_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
        
-        ImDrawVert* vtx_dst = (ImDrawVert*)rb->VertexBuffer->Map(0, rb->VertexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
+        ImDrawVert* vtx_dst = (ImDrawVert*)rb->VertexBuffer->Map(0, (uint32_t)rb->VertexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
         for (int n = 0; n < draw_data->CmdListsCount; n++)
         {
             const ImDrawList* cmd_list = draw_data->CmdLists[n];
@@ -534,7 +534,7 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, /*const Crowny::Ref<
         }
         rb->VertexBuffer->Unmap();
 
-        ImDrawIdx* idx_dst = (ImDrawIdx*)rb->IndexBuffer->Map(0, rb->IndexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
+        ImDrawIdx* idx_dst = (ImDrawIdx*)rb->IndexBuffer->Map(0, (uint32_t)rb->IndexBufferSize, Crowny::GpuLockOptions::WRITE_DISCARD);
         for (int n = 0; n < draw_data->CmdListsCount; n++)
         {
             const ImDrawList* cmd_list = draw_data->CmdLists[n];
