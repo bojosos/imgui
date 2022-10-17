@@ -420,7 +420,7 @@ static void CreateOrResizeVertexBuffer(Crowny::Ref<Crowny::VertexBuffer>& buffer
 {
     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
     ImGui_ImplVulkan_InitInfo* v = &bd->VulkanInitInfo;
-    buffer = Crowny::VertexBuffer::Create(new_size, Crowny::BufferUsage::DYNAMIC_DRAW);
+    buffer = Crowny::VertexBuffer::Create((uint32_t)new_size, Crowny::BufferUsage::DYNAMIC_DRAW);
     p_buffer_size = new_size;
 }
 
@@ -428,7 +428,7 @@ static void CreateOrResizeIndexBuffer(Crowny::Ref<Crowny::IndexBuffer>& buffer, 
 {
     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
     ImGui_ImplVulkan_InitInfo* v = &bd->VulkanInitInfo;
-    buffer = Crowny::IndexBuffer::Create(new_size, sizeof(ImDrawIdx) == 2 ? Crowny::IndexType::Index_16 : Crowny::IndexType::Index_32, Crowny::BufferUsage::DYNAMIC_DRAW);
+    buffer = Crowny::IndexBuffer::Create((uint32_t)new_size, sizeof(ImDrawIdx) == 2 ? Crowny::IndexType::Index_16 : Crowny::IndexType::Index_32, Crowny::BufferUsage::DYNAMIC_DRAW);
     p_buffer_size = new_size * sizeof(ImDrawIdx);
 }
 
