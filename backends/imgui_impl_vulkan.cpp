@@ -761,6 +761,8 @@ bool ImGui_ImplVulkan_CreateFontsTexture(VkCommandBuffer command_buffer)
 
 ImTextureID ImGui_ImplVulkan_AddTexture(const Crowny::Ref<Crowny::Texture>& texture)
 {
+    if (!texture)
+        return 0;
     Crowny::VulkanTexture* vkTexture = static_cast<Crowny::VulkanTexture*>(texture.get());
     Crowny::VulkanImage* image = vkTexture->GetImage();
     Crowny::Ref<Crowny::SamplerState> samplerState = Crowny::SamplerState::GetDefault();
