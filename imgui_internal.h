@@ -1251,15 +1251,15 @@ struct IMGUI_API ImGuiInputTextState
     void        OnCharPressed(unsigned int c);
 
     // Cursor & Selection
-    void        CursorAnimReset()           { CursorAnim = -0.30f; }                                   // After a user-input the cursor stays on for a while without blinking
-    void        CursorClamp()               { Stb.cursor = ImMin(Stb.cursor, CurLenW); Stb.select_start = ImMin(Stb.select_start, CurLenW); Stb.select_end = ImMin(Stb.select_end, CurLenW); }
-    bool        HasSelection() const        { return Stb.select_start != Stb.select_end; }
-    void        ClearSelection()            { Stb.select_start = Stb.select_end = Stb.cursor; }
-    int         GetCursorPos() const        { return Stb.cursor; }
-    int         GetSelectionStart() const   { return Stb.select_start; }
-    int         GetSelectionEnd() const     { return Stb.select_end; }
-    void        SelectAll()                 { Stb.select_start = 0; Stb.cursor = Stb.select_end = CurLenW; Stb.has_preferred_x = 0; }
-    void        Select(int start, int len)  { Stb.select_start = 0;  Stb.cursor = Stb.select_end = CurLenW - len; Stb.has_preferred_x = 0; } // Selects the text starting at 'start' with length CurLenW - len. Doggy
+    void CursorAnimReset();
+    void CursorClamp();
+    bool HasSelection() const;
+    void ClearSelection();
+    int GetCursorPos() const;
+    int GetSelectionStart() const;
+    int GetSelectionEnd() const;
+    void SelectAll();
+    void Select(int start, int len); // Selects the text starting at 'start' with length CurLenW - len. Dodgy
     
     // Reload user buf (WIP #2890)
     // If you modify underlying user-passed const char* while active you need to call this (InputText V2 may lift this)
@@ -3554,7 +3554,6 @@ namespace ImGui
     IMGUI_API void          ClosePopupsExceptModals();
     IMGUI_API bool          IsPopupOpen(ImGuiID id, ImGuiPopupFlags popup_flags);
     IMGUI_API bool          BeginPopupEx(ImGuiID id, ImGuiWindowFlags extra_flags);
-    IMGUI_API void          BeginTooltipEx(ImGuiWindowFlags extra_flags, ImGuiTooltipFlags tooltip_flags);
     IMGUI_API ImRect        GetPopupAllowedExtentRect(ImGuiWindow* window);
     IMGUI_API ImGuiWindow*  GetTopMostPopupModal();
     IMGUI_API ImGuiWindow*  GetTopMostAndVisiblePopupModal();
