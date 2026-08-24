@@ -1926,7 +1926,6 @@ enum ImGuiStyleVar_
     ImGuiStyleVar_ScrollbarPadding,         // float     ScrollbarPadding
     ImGuiStyleVar_GrabMinSize,              // float     GrabMinSize
     ImGuiStyleVar_GrabRounding,             // float     GrabRounding
-    ImGuiStyleVar_LayoutAlign,              // float     LayoutAlign
     ImGuiStyleVar_ImageRounding,            // float     ImageRounding
     ImGuiStyleVar_ImageBorderSize,          // float     ImageBorderSize
     ImGuiStyleVar_TabRounding,              // float     TabRounding
@@ -1946,6 +1945,7 @@ enum ImGuiStyleVar_
     ImGuiStyleVar_SeparatorTextAlign,       // ImVec2    SeparatorTextAlign
     ImGuiStyleVar_SeparatorTextPadding,     // ImVec2    SeparatorTextPadding
     ImGuiStyleVar_DockingSeparatorSize,     // float     DockingSeparatorSize
+    ImGuiStyleVar_LayoutAlign,              // float     LayoutAlign
     ImGuiStyleVar_COUNT
 };
 
